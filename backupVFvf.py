@@ -264,27 +264,6 @@ first = True
 t_prediction = time.time()
 t_physic_engine = 0
 ##-->MIPARTE
-space = pymunk.Space()
-space.gravity = (0, 0)  # No hay gravedad en un juego de billar
-
-def crear_bola(space, position, mass=1, radius=27):
-    inertia = pymunk.moment_for_circle(mass, 0, radius)
-    body = pymunk.Body(mass, inertia)
-    body.position = position
-    shape = pymunk.Circle(body, radius)
-    shape.elasticity = 0.95  # coeficiente de restitución
-    shape.friction = 0.9  # fricción de la bola
-    space.add(body, shape)
-    return body
-
-def aplicar_impulso(bola, impulso):
-    bola.apply_impulse_at_local_point(impulso)
-
-def simular_movimientos(space, steps=100):
-    for _ in range(steps):
-        space.step(1/50.0)  # Avanzar la simulación
-
-
 def line_equation(x1, y1, x2, y2):
     A = y2 - y1
     B = x1 - x2
