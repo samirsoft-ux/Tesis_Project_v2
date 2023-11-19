@@ -2,7 +2,6 @@ import numpy as np
 import cv2
 import json
 from math import *
-import math
 from time import *
 import time
 import matplotlib.pyplot as plt
@@ -272,44 +271,7 @@ def line_equation(x1, y1, x2, y2):
 def distance_point_line(x0, y0, A, B, C):
     # Calcula la distancia del punto (x0, y0) a la línea definida por A, B, C
     return abs(A*x0 + B*y0 + C) / (A**2 + B**2)**0.5
-#--<#--<
-def calcular_vector_direccion(punto_inicial, punto_final):
-    dx = punto_final[0] - punto_inicial[0]
-    dy = punto_final[1] - punto_inicial[1]
-    longitud = (dx**2 + dy**2)**0.5
-    return (dx / longitud, dy / longitud) 
-def norma(vector):
-    return math.sqrt(vector[0]**2 + vector[1]**2)
-def calcular_punto_impacto(xb, yb, radio_bola, direccion_taco):
-    # Normalizar la dirección del taco
-    norma_direccion = norma(direccion_taco)
-    direccion_normalizada = (direccion_taco[0] / norma_direccion, direccion_taco[1] / norma_direccion)
-
-    # Calcular el punto más cercano en la línea desde el centro de la bola
-    punto_mas_cercano = (xb + direccion_normalizada[0] * radio_bola, yb + direccion_normalizada[1] * radio_bola)
-
-    return punto_mas_cercano
-def calcular_direccion_reflejada(direccion_taco, direccion_normal):
-    # Calcular la dirección reflejada
-    # La reflexión se calcula como la dirección del taco menos 2 veces la proyección
-    # de la dirección del taco sobre la dirección normal
-    norma_normal = norma(direccion_normal)
-    direccion_normal_normalizada = (direccion_normal[0] / norma_normal, direccion_normal[1] / norma_normal)
-    proyeccion = sum(dt * dn for dt, dn in zip(direccion_taco, direccion_normal_normalizada))
-    return tuple(dt - 2 * proyeccion * dn for dt, dn in zip(direccion_taco, direccion_normal_normalizada))
-def calcular_distancia_entre_bolas(bola1, bola2):
-    return math.sqrt((bola1[0] - bola2[0])**2 + (bola1[1] - bola2[1])**2)
-def calcular_direccion_post_colision(punto_impacto, bola_objetivo, direccion_reflejada):
-    # Asumiendo una colisión directa y central
-    dx = bola_objetivo[0] - punto_impacto[0]
-    dy = bola_objetivo[1] - punto_impacto[1]
-    longitud = math.sqrt(dx**2 + dy**2)
-    return (dx / longitud, dy / longitud)
-def distancia_punto_linea(px, py, x1, y1, x2, y2):
-    numerador = abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1)
-    denominador = math.sqrt((y2 - y1)**2 + (x2 - x1)**2)
-    return numerador / denominador
-#--<#--<
+#--<
 while True:
     t_frame = time.time()
     ret, frame = cap.read()
@@ -356,57 +318,12 @@ while True:
             l+=[(x, y)]
     ##-->MIPARTE
     if taco_detectado:
-        #--<#--<
-        direccion_taco = calcular_vector_direccion(punto_inicial, punto_final)
-        #--<#--<
         A, B, C = line_equation(*punto_inicial, *punto_final)
         radio_bola = 27  # Ajusta según el tamaño real de tus bolas
         for xb, yb in l:
             dist = distance_point_line(xb, yb, A, B, C)
             if dist <= radio_bola:
                 print(f"La línea del taco choca con la bola en ({xb}, {yb})")
-                # Asumiendo que detectas una colisión
-                punto_impacto = calcular_punto_impacto(xb, yb, radio_bola, direccion_taco)
-                print(f"Punto de impacto: {punto_impacto}")
-                
-                direccion_normal = (-B, A)  # Perpendicular a la línea del taco
-                direccion_reflejada = calcular_direccion_reflejada(direccion_taco, direccion_normal)
-                print(f"Direccion de la bola: {direccion_reflejada}")
-                
-                # Calcular el punto final de la línea de dirección de la bola
-                longitud_linea = 1920  # Define la longitud de la línea de dirección
-                punto_final_reflejado = (int(punto_impacto[0] + direccion_reflejada[0] * longitud_linea),
-                                     int(punto_impacto[1] + direccion_reflejada[1] * longitud_linea))
-                punto_final_reflejado = tuple(map(int, punto_final_reflejado))
-                punto_impacto = tuple(map(int, punto_impacto))
-                # Dibujar la línea de dirección de la bola
-                cv2.line(newframe, punto_impacto, punto_final_reflejado, (0, 255, 0), 5)  # Línea verde para la dirección de la bola
-                # Encuentra la bola más cercana en la trayectoria de la bola en movimiento
-                bola_objetivo = None
-                distancia_minima = float('inf')
-                # Calcular los puntos finales de la línea de trayectoria de la bola en movimiento
-                punto_final_trayectoria = (int(punto_impacto[0] + direccion_reflejada[0] * longitud_linea),
-                                        int(punto_impacto[1] + direccion_reflejada[1] * longitud_linea))
-
-                for bola_estatica in l:
-                    if bola_estatica != (xb, yb):  # Excluye la bola en movimiento
-                        # Calcular la distancia de la bola estática a la línea de trayectoria
-                        distancia_linea = distancia_punto_linea(bola_estatica[0], bola_estatica[1],
-                                                                punto_impacto[0], punto_impacto[1],
-                                                                punto_final_trayectoria[0], punto_final_trayectoria[1])
-                        if distancia_linea < radio_bola * 2 and distancia_minima > calcular_distancia_entre_bolas(punto_impacto, bola_estatica):
-                            distancia_minima = calcular_distancia_entre_bolas(punto_impacto, bola_estatica)
-                            bola_objetivo = bola_estatica
-                # Calcular la nueva dirección post-colisión (simplificada)
-                if bola_objetivo:
-                    nueva_direccion = calcular_direccion_post_colision(punto_impacto, bola_objetivo, direccion_reflejada)
-                    punto_final_nueva_direccion = (int(bola_objetivo[0] + nueva_direccion[0] * longitud_linea),
-                                                int(bola_objetivo[1] + nueva_direccion[1] * longitud_linea))
-                    punto_final_nueva_direccion = tuple(map(int, punto_final_nueva_direccion))
-
-                    # Dibujar la nueva trayectoria
-                    cv2.line(newframe, bola_objetivo, punto_final_nueva_direccion, (255, 0, 0), 5)  # Línea roja para la nueva dirección
-
     #--<
     Ball.mapping_detecting_balls(t_frame - debut_time, l)
     for ball in Ball.lBall:
