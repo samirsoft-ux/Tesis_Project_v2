@@ -365,6 +365,8 @@ def dibujar_trayectorias(trayectorias, newframe, buchacas, umbral_distancia=100)
             else:
                 cv2.line(newframe, start_pos, end_pos, color_normal, 2)
 
+historial_taco = []  # Almacenar las últimas posiciones del taco
+max_historial = 5    # Número máximo de posiciones a almacenar
 
 
 while True:
@@ -388,9 +390,21 @@ while True:
         lY=[y for [[_, y]] in c]
         if np.corrcoef(lX, lY)[0, 1]**2 > 0.2: ##ESTO PUEDO CAMBIAR PARA QUE DETECTE MEJOR EL TACO SI ES MÁS PEQUEÑO TOMA MÁS OBJETOS COMO LINEALES
             [vx,vy,x,y] = cv2.fitLine(c, cv2.DIST_L2, 0, 0.01, 0.01).flatten()
-            punto_inicial = (int(x + vx * 1920), int(y + vy * 1920))
-            punto_final = (int(x + vx * -1920), int(y + vy * -1920))
+            punto_inicial_actual = (int(x + vx * 1920), int(y + vy * 1920))
+            punto_final_actual = (int(x + vx * -1920), int(y + vy * -1920))
             taco_detectado = True
+            
+            
+            # Agregar las posiciones actuales al historial
+            historial_taco.append((punto_inicial_actual, punto_final_actual))
+            if len(historial_taco) > max_historial:
+                historial_taco.pop(0)
+
+            # Calcular la posición promedio del taco
+            promedio_inicial = np.mean([p[0] for p in historial_taco], axis=0).astype(int)
+            promedio_final = np.mean([p[1] for p in historial_taco], axis=0).astype(int)
+            punto_inicial = promedio_inicial
+            punto_final = promedio_final
             continue
         x = int(M["m10"] / M["m00"])
         y = int(M["m01"] / M["m00"])
@@ -398,6 +412,7 @@ while True:
         if ecartype < 10:
             l+=[(x, y)]
     if taco_detectado:
+        
         space = pymunk.Space()
         space.gravity = (0, 0)
         dimensiones_mesa = (ancho_mesa, alto_mesa)
