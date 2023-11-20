@@ -112,10 +112,11 @@ class Ball:
         else:
             pass
         self.debut_simulation += dt
-    def __del__(self):
+    def remove_from_space(self):
         global space
         Ball.sId_available.add(self.id)
-        space.remove(self.body, self.shape)
+        if self.body in space.bodies:
+            space.remove(self.body, self.shape)
         Ball.lBall.remove(self)
         del self
     def interpolation(self, dt):
@@ -228,7 +229,7 @@ class Ball:
             return
         for ball in Ball.lBall:
             if t - ball.lPos[-1][0] > 1.5:
-                ball.__del__()
+                ball.remove_from_space()
         lDistance = []
         lMapped_ball = set()
         lMapped_detected_ball = set()
@@ -250,6 +251,7 @@ class Ball:
                 i += 1  
         for detected in lDetected_ball:
             Ball(t, *detected)
+
 _, frame = cap.read()
 prevframe = frame[:,:,:] #frame[:,:,2]    #First frame
 prevframe = cv2.warpPerspective(prevframe, m_camera2screen, (1920,1080), flags=cv2.INTER_LINEAR)
@@ -263,53 +265,44 @@ first = True
 t_prediction = time.time()
 t_physic_engine = 0
 ##-->MIPARTE
+def crear_bola(space, position, mass=1, radius=27):
+    inertia = pymunk.moment_for_circle(mass, 0, radius)
+    body = pymunk.Body(mass, inertia)
+    body.position = position
+    shape = pymunk.Circle(body, radius)
+    shape.elasticity = 0.95  # coeficiente de restitución
+    shape.friction = 0.9  # fricción de la bola
+    space.add(body, shape)
+    return body
+def aplicar_impulso(bola, impulso):
+    bola.apply_impulse_at_local_point(impulso)
+def simular_movimientos_y_obtener_trayectorias(space, bolas_pymunk, steps=100):
+    trayectorias = {bola: [] for bola in bolas_pymunk}
+    for _ in range(steps):
+        space.step(1/50.0)
+        for bola in bolas_pymunk:
+            trayectorias[bola].append(bola.position)
+    return trayectorias
+def dibujar_trayectorias(trayectorias, newframe):
+    for bola, posiciones in trayectorias.items():
+        for i in range(1, len(posiciones)):
+            start_pos = (int(posiciones[i - 1].x), int(posiciones[i - 1].y))
+            end_pos = (int(posiciones[i].x), int(posiciones[i].y))
+            cv2.line(newframe, start_pos, end_pos, (0, 255, 0), 2)  # Dibuja con color verde y grosor 2
 def line_equation(x1, y1, x2, y2):
-    # Coeficientes de la ecuación de la línea Ax + By + C = 0
     A = y2 - y1
     B = x1 - x2
     C = x2*y1 - x1*y2
     return A, B, C
 def distance_point_line(x0, y0, A, B, C):
-    # Calcula la distancia del punto (x0, y0) a la línea definida por A, B, C
     return abs(A*x0 + B*y0 + C) / (A**2 + B**2)**0.5
-#--<#--<
 def calcular_vector_direccion(punto_inicial, punto_final):
     dx = punto_final[0] - punto_inicial[0]
     dy = punto_final[1] - punto_inicial[1]
     longitud = (dx**2 + dy**2)**0.5
     return (dx / longitud, dy / longitud) 
-def norma(vector):
-    return math.sqrt(vector[0]**2 + vector[1]**2)
-def calcular_punto_impacto(xb, yb, radio_bola, direccion_taco):
-    # Normalizar la dirección del taco
-    norma_direccion = norma(direccion_taco)
-    direccion_normalizada = (direccion_taco[0] / norma_direccion, direccion_taco[1] / norma_direccion)
-
-    # Calcular el punto más cercano en la línea desde el centro de la bola
-    punto_mas_cercano = (xb + direccion_normalizada[0] * radio_bola, yb + direccion_normalizada[1] * radio_bola)
-
-    return punto_mas_cercano
-def calcular_direccion_reflejada(direccion_taco, direccion_normal):
-    # Calcular la dirección reflejada
-    # La reflexión se calcula como la dirección del taco menos 2 veces la proyección
-    # de la dirección del taco sobre la dirección normal
-    norma_normal = norma(direccion_normal)
-    direccion_normal_normalizada = (direccion_normal[0] / norma_normal, direccion_normal[1] / norma_normal)
-    proyeccion = sum(dt * dn for dt, dn in zip(direccion_taco, direccion_normal_normalizada))
-    return tuple(dt - 2 * proyeccion * dn for dt, dn in zip(direccion_taco, direccion_normal_normalizada))
 def calcular_distancia_entre_bolas(bola1, bola2):
     return math.sqrt((bola1[0] - bola2[0])**2 + (bola1[1] - bola2[1])**2)
-def calcular_direccion_post_colision(punto_impacto, bola_objetivo, direccion_reflejada):
-    # Asumiendo una colisión directa y central
-    dx = bola_objetivo[0] - punto_impacto[0]
-    dy = bola_objetivo[1] - punto_impacto[1]
-    longitud = math.sqrt(dx**2 + dy**2)
-    return (dx / longitud, dy / longitud)
-def distancia_punto_linea(px, py, x1, y1, x2, y2):
-    numerador = abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1)
-    denominador = math.sqrt((y2 - y1)**2 + (x2 - x1)**2)
-    return numerador / denominador
-#--<#--<
 while True:
     t_frame = time.time()
     ret, frame = cap.read()
@@ -319,95 +312,60 @@ while True:
     nextframe = cv2.GaussianBlur(nextframe,(5,5),0)
     _, nextframe = cv2.threshold(nextframe, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     contours, hierarchy = cv2.findContours(nextframe, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    newframe = fond.copy() # np.zeros(frame.shape)
+    newframe = fond.copy()
     l=[]
-    ##-->MIPARTE
     taco_detectado = False
-    #--<
     for c in contours:
         M = cv2.moments(c)
-        # Surface trop petite ?
         if M["m00"]<np.pi*25**2:
             continue
         lX=[x for [[x, _]] in c]
         lY=[y for [[_, y]] in c]
         if np.corrcoef(lX, lY)[0, 1]**2 > 0.75:
-            [vx,vy,x,y] = cv2.fitLine(c, cv2.DIST_L2, 0, 0.01, 0.01)
-            ##-->MIPARTE
-            punto_inicial = (int(x + vx * -1920), int(y + vy * -1920))
-            punto_final = (int(x + vx * 1920), int(y + vy * 1920))
-            cv2.line(
-                newframe,
-                punto_inicial,
-                punto_final,
-                (255, 255, 255),
-                15
-            )
-            #--<
-            ##-->MIPARTE
+            [vx,vy,x,y] = cv2.fitLine(c, cv2.DIST_L2, 0, 0.01, 0.01).flatten()
+            punto_inicial = (int(x + vx * 1920), int(y + vy * 1920))
+            punto_final = (int(x + vx * -1920), int(y + vy * -1920))
             taco_detectado = True
-            #--<
             continue
         x = int(M["m10"] / M["m00"])
         y = int(M["m01"] / M["m00"])
         ecartype = np.std([((x-ix)**2 + (y-iy)**2)**0.5 for ix, iy in zip(lX, lY)])
-        # ça ressemble à un cercle ?
         if ecartype < 10:
             l+=[(x, y)]
-    ##-->MIPARTE
     if taco_detectado:
-        #--<#--<
+        space = pymunk.Space()
+        space.gravity = (0, 0)
+        bolas_pymunk = [crear_bola(space, pos) for pos in l]
         direccion_taco = calcular_vector_direccion(punto_inicial, punto_final)
-        #--<#--<
         A, B, C = line_equation(*punto_inicial, *punto_final)
-        radio_bola = 27  # Ajusta según el tamaño real de tus bolas
+        radio_bola = 27  
+        bola_mas_cercana = None
+        distancia_minima = float('inf')
         for xb, yb in l:
             dist = distance_point_line(xb, yb, A, B, C)
-            if dist <= radio_bola:
+            distancia_al_taco = calcular_distancia_entre_bolas(punto_inicial, (xb, yb))
+            if dist <= radio_bola and distancia_al_taco < distancia_minima:
+                direccion_a_la_bola = calcular_vector_direccion(punto_inicial, (xb, yb))
+                if direccion_a_la_bola[0] * direccion_taco[0] + direccion_a_la_bola[1] * direccion_taco[1] > 0:
+                    distancia_minima = distancia_al_taco
+                    bola_mas_cercana = (xb, yb)
                 print(f"La línea del taco choca con la bola en ({xb}, {yb})")
-                # Asumiendo que detectas una colisión
-                punto_impacto = calcular_punto_impacto(xb, yb, radio_bola, direccion_taco)
-                print(f"Punto de impacto: {punto_impacto}")
-                
-                direccion_normal = (-B, A)  # Perpendicular a la línea del taco
-                direccion_reflejada = calcular_direccion_reflejada(direccion_taco, direccion_normal)
-                print(f"Direccion de la bola: {direccion_reflejada}")
-                
-                # Calcular el punto final de la línea de dirección de la bola
-                longitud_linea = 1920  # Define la longitud de la línea de dirección
-                punto_final_reflejado = (int(punto_impacto[0] + direccion_reflejada[0] * longitud_linea),
-                                     int(punto_impacto[1] + direccion_reflejada[1] * longitud_linea))
-                punto_final_reflejado = tuple(map(int, punto_final_reflejado))
-                punto_impacto = tuple(map(int, punto_impacto))
-                # Dibujar la línea de dirección de la bola
-                cv2.line(newframe, punto_impacto, punto_final_reflejado, (0, 255, 0), 5)  # Línea verde para la dirección de la bola
-                # Encuentra la bola más cercana en la trayectoria de la bola en movimiento
-                bola_objetivo = None
-                distancia_minima = float('inf')
-                # Calcular los puntos finales de la línea de trayectoria de la bola en movimiento
-                punto_final_trayectoria = (int(punto_impacto[0] + direccion_reflejada[0] * longitud_linea),
-                                        int(punto_impacto[1] + direccion_reflejada[1] * longitud_linea))
+                if bola_mas_cercana:
+                    
+                    # Aplicar impulso a la bola más cercana al taco
+                    direccion_taco = calcular_vector_direccion(punto_inicial, punto_final)
+                    for bola in bolas_pymunk:
+                        if (int(bola.position.x), int(bola.position.y)) == bola_mas_cercana:
+                            impulso = pymunk.Vec2d(*direccion_taco) * 2000
+                            aplicar_impulso(bola, impulso)
+                            break
+                    # Simular movimientos y obtener trayectorias
+                    trayectorias = simular_movimientos_y_obtener_trayectorias(space, bolas_pymunk, steps=100)
 
-                for bola_estatica in l:
-                    if bola_estatica != (xb, yb):  # Excluye la bola en movimiento
-                        # Calcular la distancia de la bola estática a la línea de trayectoria
-                        distancia_linea = distancia_punto_linea(bola_estatica[0], bola_estatica[1],
-                                                                punto_impacto[0], punto_impacto[1],
-                                                                punto_final_trayectoria[0], punto_final_trayectoria[1])
-                        if distancia_linea < radio_bola * 2 and distancia_minima > calcular_distancia_entre_bolas(punto_impacto, bola_estatica):
-                            distancia_minima = calcular_distancia_entre_bolas(punto_impacto, bola_estatica)
-                            bola_objetivo = bola_estatica
-                # Calcular la nueva dirección post-colisión (simplificada)
-                if bola_objetivo:
-                    nueva_direccion = calcular_direccion_post_colision(punto_impacto, bola_objetivo, direccion_reflejada)
-                    punto_final_nueva_direccion = (int(bola_objetivo[0] + nueva_direccion[0] * longitud_linea),
-                                                int(bola_objetivo[1] + nueva_direccion[1] * longitud_linea))
-                    punto_final_nueva_direccion = tuple(map(int, punto_final_nueva_direccion))
-
-                    # Dibujar la nueva trayectoria
-                    cv2.line(newframe, bola_objetivo, punto_final_nueva_direccion, (255, 0, 0), 5)  # Línea roja para la nueva dirección
-
-    #--<
+                    # Dibujar las trayectorias resultantes
+                    dibujar_trayectorias(trayectorias, newframe)
+                    cv2.line(newframe, punto_inicial, bola_mas_cercana, (255, 255, 255), 15)
+                        
     Ball.mapping_detecting_balls(t_frame - debut_time, l)
     for ball in Ball.lBall:
         x, y, vx, vy, v = ball.interpolation((time.time() - t_prediction) + 0.4)
