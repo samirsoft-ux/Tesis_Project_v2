@@ -51,7 +51,7 @@ lEdges = [pymunk.Segment(body, (0, 0), (cadre[0], 0), 10),
 ]
 for edge in lEdges:
     edge.elasticity = 0.95
-    edge.friction = 0 ## 0.1
+    edge.friction = 0.1 ## 0.1
 space.add(*lEdges)
 class Ball:
     scoreLimit = 0.90
@@ -91,8 +91,8 @@ class Ball:
         body = pymunk.Body(Ball.mass, inertia)
         body.position = (x, y)
         shape = pymunk.Circle(body, Ball.radius, (0, 0))
-        shape.elasticity = 1 #0.95
-        shape.friction = 0.1 #0.9
+        shape.elasticity = 0.95 #0.95
+        shape.friction = 0.9 #0.9
         space.add(body, shape)        
         body.velocity_func = self.static_friction
         self.shape = shape
@@ -303,28 +303,20 @@ def calcular_vector_direccion(punto_inicial, punto_final):
     return (dx / longitud, dy / longitud) 
 def calcular_distancia_entre_bolas(bola1, bola2):
     return math.sqrt((bola1[0] - bola2[0])**2 + (bola1[1] - bola2[1])**2)
-
 def cargar_datos_esquinas(archivo_json):
     with open(archivo_json, 'r') as file:
         data = json.load(file)
         esquinas = data['l_circle_screen']
         return esquinas
-
-archivo_json = 'data.json'  # Asegúrate de que la ruta al archivo sea correcta
+archivo_json = 'data.json'
 esquinas = cargar_datos_esquinas(archivo_json)
-
 def calcular_dimensiones(esquinas):
     if len(esquinas) != 4:
         raise ValueError("Se requieren exactamente cuatro esquinas")
-
-    # Asumiendo que las esquinas están ordenadas correctamente
     ancho = np.linalg.norm(np.array(esquinas[0]) - np.array(esquinas[2]))
     alto = np.linalg.norm(np.array(esquinas[0]) - np.array(esquinas[1]))
-
     return ancho, alto
-
 ancho_mesa, alto_mesa = calcular_dimensiones(esquinas)
-
 def crear_bandas(space, dimensiones_mesa, grosor_banda=10):
     # Definir las bandas de la mesa
     bordes = [
@@ -336,8 +328,11 @@ def crear_bandas(space, dimensiones_mesa, grosor_banda=10):
     for borde in bordes:
         borde.elasticity = 0.95
         borde.friction = 0.5
-        space.add(borde)
-
+        space.add(borde)  
+bola_mas_cercana = None
+umbral_distancia = 10  # por ejemplo, 10 píxeles
+def distancia(a, b):
+    return np.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
 while True:
     t_frame = time.time()
     ret, frame = cap.read()
@@ -350,7 +345,6 @@ while True:
     newframe = fond.copy()
     l=[]
     taco_detectado = False
-    #cv2.circle(newframe, (1344, 536), 27, (255, 0, 255), 10)
     for c in contours:
         M = cv2.moments(c)
         if M["m00"]<np.pi*25**2:
@@ -371,16 +365,12 @@ while True:
     if taco_detectado:
         space = pymunk.Space()
         space.gravity = (0, 0)
-        
-        # Definir dimensiones de la mesa (ajustar según sea necesario)
         dimensiones_mesa = (ancho_mesa, alto_mesa)
         crear_bandas(space, dimensiones_mesa)
-        
         bolas_pymunk = [crear_bola(space, pos) for pos in l]
         direccion_taco = calcular_vector_direccion(punto_inicial, punto_final)
         A, B, C = line_equation(*punto_inicial, *punto_final)
-        radio_bola = 27  
-        bola_mas_cercana = None
+        radio_bola = 27
         distancia_minima = float('inf')
         for xb, yb in l:
             dist = distance_point_line(xb, yb, A, B, C)
@@ -392,27 +382,30 @@ while True:
                     bola_mas_cercana = (xb, yb)
                 print(f"La línea del taco choca con la bola en ({xb}, {yb})")
                 if bola_mas_cercana:
-                    
-                    # Aplicar impulso a la bola más cercana al taco
+                    # Cambiar el color de la bola más cercana a blanco
+                    #cv2.circle(newframe, bola_mas_cercana, radio_bola*2, (255, 255, 255), -1)
                     direccion_taco = calcular_vector_direccion(punto_inicial, punto_final)
                     for bola in bolas_pymunk:
                         if (int(bola.position.x), int(bola.position.y)) == bola_mas_cercana:
                             impulso = pymunk.Vec2d(*direccion_taco) * 2000
                             aplicar_impulso(bola, impulso)
                             break
-                    # Simular movimientos y obtener trayectorias
                     trayectorias = simular_movimientos_y_obtener_trayectorias(space, bolas_pymunk, steps=100)
-
-                    # Dibujar las trayectorias resultantes
                     dibujar_trayectorias(trayectorias, newframe)
                     cv2.line(newframe, punto_inicial, bola_mas_cercana, (255, 255, 255), 15)
-                        
+            
     Ball.mapping_detecting_balls(t_frame - debut_time, l)
     for ball in Ball.lBall:
         x, y, vx, vy, v = ball.interpolation((time.time() - t_prediction) + 0.4)
         x, y = int(x), int(y)
         zoom = 0.7
-        cv2.circle(newframe, (x, y), 50, (255, 255, 255), 10)
+        # Comprueba si esta bola es la bola más cercana que será golpeada por el taco
+        #
+        if bola_mas_cercana and distancia((x, y), bola_mas_cercana) <= umbral_distancia:
+            color_bola = (255, 255, 255)  # Blanco para la bola más cercana
+        else:
+            color_bola = (0, 255, 0)  # Color original para otras bolas
+        cv2.circle(newframe, (x, y), 50, color_bola, 10)
         if v > 0:
             cv2.arrowedLine(newframe,
                             (int(x), int(y)),
@@ -457,7 +450,7 @@ while True:
         cv2.circle(newframe,
                    tuple(map(int, ball.body.position)),
                    int(Ball.radius),
-                   (0, 255, 0),
+                   color_bola,
                    -1)
         font_scale = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_SIMPLEX, 30, 3) 
         cv2.putText(newframe,
