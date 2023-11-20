@@ -303,6 +303,41 @@ def calcular_vector_direccion(punto_inicial, punto_final):
     return (dx / longitud, dy / longitud) 
 def calcular_distancia_entre_bolas(bola1, bola2):
     return math.sqrt((bola1[0] - bola2[0])**2 + (bola1[1] - bola2[1])**2)
+
+def cargar_datos_esquinas(archivo_json):
+    with open(archivo_json, 'r') as file:
+        data = json.load(file)
+        esquinas = data['l_circle_screen']
+        return esquinas
+
+archivo_json = 'data.json'  # Asegúrate de que la ruta al archivo sea correcta
+esquinas = cargar_datos_esquinas(archivo_json)
+
+def calcular_dimensiones(esquinas):
+    if len(esquinas) != 4:
+        raise ValueError("Se requieren exactamente cuatro esquinas")
+
+    # Asumiendo que las esquinas están ordenadas correctamente
+    ancho = np.linalg.norm(np.array(esquinas[0]) - np.array(esquinas[2]))
+    alto = np.linalg.norm(np.array(esquinas[0]) - np.array(esquinas[1]))
+
+    return ancho, alto
+
+ancho_mesa, alto_mesa = calcular_dimensiones(esquinas)
+
+def crear_bandas(space, dimensiones_mesa, grosor_banda=10):
+    # Definir las bandas de la mesa
+    bordes = [
+        pymunk.Segment(space.static_body, (0, 0), (dimensiones_mesa[0], 0), grosor_banda),  # Banda superior
+        pymunk.Segment(space.static_body, (0, 0), (0, dimensiones_mesa[1]), grosor_banda),  # Banda izquierda
+        pymunk.Segment(space.static_body, (dimensiones_mesa[0], 0), dimensiones_mesa, grosor_banda),  # Banda derecha
+        pymunk.Segment(space.static_body, (0, dimensiones_mesa[1]), dimensiones_mesa, grosor_banda)   # Banda inferior
+    ]
+    for borde in bordes:
+        borde.elasticity = 0.95
+        borde.friction = 0.5
+        space.add(borde)
+
 while True:
     t_frame = time.time()
     ret, frame = cap.read()
@@ -315,6 +350,7 @@ while True:
     newframe = fond.copy()
     l=[]
     taco_detectado = False
+    #cv2.circle(newframe, (1344, 536), 27, (255, 0, 255), 10)
     for c in contours:
         M = cv2.moments(c)
         if M["m00"]<np.pi*25**2:
@@ -335,6 +371,11 @@ while True:
     if taco_detectado:
         space = pymunk.Space()
         space.gravity = (0, 0)
+        
+        # Definir dimensiones de la mesa (ajustar según sea necesario)
+        dimensiones_mesa = (ancho_mesa, alto_mesa)
+        crear_bandas(space, dimensiones_mesa)
+        
         bolas_pymunk = [crear_bola(space, pos) for pos in l]
         direccion_taco = calcular_vector_direccion(punto_inicial, punto_final)
         A, B, C = line_equation(*punto_inicial, *punto_final)
