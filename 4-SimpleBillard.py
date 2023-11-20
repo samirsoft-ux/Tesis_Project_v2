@@ -1,3 +1,5 @@
+#LAS ESQUINAS DEBEN DE ESTAR AL FILO DE LAS BANDAS PORQUE SE USAN PARA LOS CALCULOS 
+#MEJORAR: LA DETECCIÓN DE TODAS LAS BOLAS Y QUE SE PUEDE CONSIDERAR EL EFECTO EN LA BOLA
 import numpy as np
 import cv2
 import json
@@ -283,12 +285,6 @@ def simular_movimientos_y_obtener_trayectorias(space, bolas_pymunk, steps=100):
         for bola in bolas_pymunk:
             trayectorias[bola].append(bola.position)
     return trayectorias
-def dibujar_trayectorias(trayectorias, newframe):
-    for bola, posiciones in trayectorias.items():
-        for i in range(1, len(posiciones)):
-            start_pos = (int(posiciones[i - 1].x), int(posiciones[i - 1].y))
-            end_pos = (int(posiciones[i].x), int(posiciones[i].y))
-            cv2.line(newframe, start_pos, end_pos, (0, 255, 0), 2)  # Dibuja con color verde y grosor 2
 def line_equation(x1, y1, x2, y2):
     A = y2 - y1
     B = x1 - x2
@@ -333,6 +329,44 @@ bola_mas_cercana = None
 umbral_distancia = 10  # por ejemplo, 10 píxeles
 def distancia(a, b):
     return np.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+
+# Definir las posiciones de las buchacas
+buchacas = esquinas  # Las esquinas de la mesa
+# Añadir las buchacas del medio (puntos medios de los lados más largos)
+buchacas += [
+    ((esquinas[0][0] + esquinas[1][0]) // 2, esquinas[0][1]),  # Banda superior
+    ((esquinas[2][0] + esquinas[3][0]) // 2, esquinas[2][1])   # Banda inferior
+]
+
+# Función para verificar si una posición está cerca de una buchaca
+def cerca_de_buchaca(pos, buchacas, umbral=100):  # Umbral en píxeles
+    for buchaca in buchacas:
+        if distancia(pos, buchaca) <= umbral:
+            return True
+    return False
+
+def dibujar_trayectorias(trayectorias, newframe, buchacas, umbral_distancia=100):
+    color_normal = (0, 255, 0)  # Color verde para la trayectoria normal
+    color_buchaca = (255, 0, 0)  # Color rojo para cuando se acerca a una buchaca
+
+    for bola, posiciones in trayectorias.items():
+        trayectoria_terminada = False
+        for i in range(1, len(posiciones)):
+            if trayectoria_terminada:
+                break
+
+            start_pos = (int(posiciones[i - 1].x), int(posiciones[i - 1].y))
+            end_pos = (int(posiciones[i].x), int(posiciones[i].y))
+
+            # Verificar si el segmento actual está cerca de una buchaca
+            if cerca_de_buchaca(end_pos, buchacas, umbral_distancia):
+                cv2.line(newframe, start_pos, end_pos, color_buchaca, 2)
+                trayectoria_terminada = True  # Marcar la trayectoria como terminada
+            else:
+                cv2.line(newframe, start_pos, end_pos, color_normal, 2)
+
+
+
 while True:
     t_frame = time.time()
     ret, frame = cap.read()
@@ -341,6 +375,7 @@ while True:
     nextframe = cv2.absdiff(background, nextframe)
     nextframe = cv2.GaussianBlur(nextframe,(5,5),0)
     _, nextframe = cv2.threshold(nextframe, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    cv2.imshow('Billard3', nextframe)
     contours, hierarchy = cv2.findContours(nextframe, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     newframe = fond.copy()
     l=[]
@@ -351,7 +386,7 @@ while True:
             continue
         lX=[x for [[x, _]] in c]
         lY=[y for [[_, y]] in c]
-        if np.corrcoef(lX, lY)[0, 1]**2 > 0.75:
+        if np.corrcoef(lX, lY)[0, 1]**2 > 0.2: ##ESTO PUEDO CAMBIAR PARA QUE DETECTE MEJOR EL TACO SI ES MÁS PEQUEÑO TOMA MÁS OBJETOS COMO LINEALES
             [vx,vy,x,y] = cv2.fitLine(c, cv2.DIST_L2, 0, 0.01, 0.01).flatten()
             punto_inicial = (int(x + vx * 1920), int(y + vy * 1920))
             punto_final = (int(x + vx * -1920), int(y + vy * -1920))
@@ -373,6 +408,7 @@ while True:
         radio_bola = 27
         distancia_minima = float('inf')
         for xb, yb in l:
+            #cv2.line(newframe, punto_inicial, punto_final, (255, 255, 255), 15)
             dist = distance_point_line(xb, yb, A, B, C)
             distancia_al_taco = calcular_distancia_entre_bolas(punto_inicial, (xb, yb))
             if dist <= radio_bola and distancia_al_taco < distancia_minima:
@@ -391,7 +427,8 @@ while True:
                             aplicar_impulso(bola, impulso)
                             break
                     trayectorias = simular_movimientos_y_obtener_trayectorias(space, bolas_pymunk, steps=100)
-                    dibujar_trayectorias(trayectorias, newframe)
+                    dibujar_trayectorias(trayectorias, newframe, buchacas)
+                    #newframe = fond.copy()
                     cv2.line(newframe, punto_inicial, bola_mas_cercana, (255, 255, 255), 15)
             
     Ball.mapping_detecting_balls(t_frame - debut_time, l)
